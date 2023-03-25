@@ -1,0 +1,38 @@
+version: "3.7"
+services:
+  # backend:
+  #   build: ./backend
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on: [rabbitmq, mongo_db]
+  #   networks:
+  #     net-10.9.0.0:
+  #       ipv4_address: 10.9.0.4
+  db:
+    build: ./db
+    ports:
+      - "27017:27017"
+    networks:
+      net-10.9.0.0:
+        ipv4_address: 10.9.0.3
+
+  rabbitmq:
+    image: rabbitmq:3.8.17-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      net-10.9.0.0:
+        ipv4_address: 10.9.0.10
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "5672"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  net-10.9.0.0:
+    name: net-10.9.0.0
+    ipam:
+      config:
+        - subnet: 10.9.0.0/24
