@@ -8,6 +8,13 @@ services:
   #   networks:
   #     net-10.9.0.0:
   #       ipv4_address: 10.9.0.4
+  cache:
+    image: redis
+    ports:
+      - "6379:6379"
+    networks:
+      net-10.9.0.0:
+        ipv4_address: 10.9.0.9
   db:
     build: ./db
     ports:

@@ -34,11 +34,11 @@ func connectToQueue(conn *amqp.Connection) (amqp.Queue, *amqp.Channel) {
 	return q, ch
 }
 
-func postNotification(user Username, notification string, q *amqp.Channel) error {
+func postNotification[D Doc](d D, notification string, q *amqp.Channel) error {
 	s, _ := json.Marshal(notification)
 	return q.Publish(
 		"",                            // Exchange name
-		"Notifications#"+string(user), // Queue name
+		d.CollectionName()+"#"+d.Id(), // Queue name
 		false,                         // Mandatory
 		false,                         // Immediate
 		amqp.Publishing{
@@ -49,13 +49,13 @@ func postNotification(user Username, notification string, q *amqp.Channel) error
 
 }
 
-func trackNotifications(user Username, c *amqp.Connection) <-chan amqp.Delivery {
+func trackNotifications[D Doc](d D, c *amqp.Connection) <-chan amqp.Delivery {
 	ch, err := c.Channel()
 
 	// Just in case no notifications are sent yet
 
 	_, err = ch.QueueDeclare(
-		"Notifications#"+string(user), // Queue name
+		d.CollectionName()+"#"+d.Id(), // Queue name
 		false,                         // Durable
 		false,                         // Delete when unused
 		false,                         // Exclusive
@@ -64,7 +64,7 @@ func trackNotifications(user Username, c *amqp.Connection) <-chan amqp.Delivery 
 	)
 
 	failOnError(err, "Failed to open a channel")
-	d, err := ch.Consume("Notifications#"+string(user), "", false, false, false, false, nil)
+	source, err := ch.Consume(d.CollectionName()+"#"+d.Id(), "", false, false, false, false, nil)
 	failOnError(err, "Failed to open a channel")
-	return d
+	return source
 }

@@ -37,6 +37,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("user added", u)
+	json.NewEncoder(w).Encode(u)
 }
 func SignIn(w http.ResponseWriter, r *http.Request) {
 	if (*r).Method == "OPTIONS" {
@@ -53,6 +54,7 @@ func SignIn(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	log.Println("user found", u)
+	json.NewEncoder(w).Encode(u)
 }
 func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	if (*r).Method == "OPTIONS" {
@@ -76,6 +78,7 @@ func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	log.Println("user deleted", u)
+	json.NewEncoder(w).Encode(u)
 }
 func NewPost(w http.ResponseWriter, r *http.Request) {
 	if (*r).Method == "OPTIONS" {
@@ -84,11 +87,15 @@ func NewPost(w http.ResponseWriter, r *http.Request) {
 	// Parse and decode the request body into a new `Credentials` instance
 	creds := decodeBody[user_doc](w, r)
 	u, err := read_user(creds.Username, db, ctx)
+	if err != nil {
+		log.Println(err)
+	}
 	post, err := u.newPost("hello world", "Hey there", db, ctx)
 	if err != nil {
 		log.Println(err)
 	}
 	log.Println("user post created", post)
+	json.NewEncoder(w).Encode(post)
 }
 
 func NewComment(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +111,7 @@ func NewComment(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 	log.Println("user comment created", comment)
+	json.NewEncoder(w).Encode(comment)
 }
 
 func AccountStats(w http.ResponseWriter, r *http.Request) {
@@ -129,4 +137,5 @@ func AccountStats(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("posts found", posts)
 	log.Println("comments found", comments)
+	json.NewEncoder(w).Encode(comments)
 }
