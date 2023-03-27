@@ -49,10 +49,6 @@ type Doc interface {
 }
 
 func Cache[D Doc](doc D, mycache *redis.Client, ctx context.Context) error {
-	// data, err := json.Marshal(doc)
-	// if err != nil {
-	// 	return err
-	// }
 	log.Println("cacheing value ", doc)
 	if err := mycache.Set(cacheCTX, doc.CollectionName()+"#"+doc.Id(), doc, 0).Err(); err != nil {
 		return err
@@ -74,7 +70,6 @@ func CheckCache[D Doc](d D, mycache *redis.Client, ctx context.Context) (D, erro
 	return wanted, err
 }
 
-// TODO for each friend look up any remaining posts
 func main() {
 	// ------- Connect to RabbitMQ server -------
 	conn, err := rabbitMQDial("amqp://guest:guest@" + mqHOST + ":5672/")
@@ -88,7 +83,6 @@ func main() {
 
 	// ------- Setup Cache ----
 	mycache, cacheCTX = setupCache()
-	// TODO  Now we need to track this users notifications
 
 	failOnError(err, "failed to read user")
 	// -------- Setup endpoints -----
@@ -105,7 +99,6 @@ func main() {
 		log.Println(err)
 	}
 	log.Println("we got ", *u2)
-	// TODO create comment on a post
 	// TODO like a post
 	// TODO like comments
 	http.HandleFunc("/signup", Signup)
