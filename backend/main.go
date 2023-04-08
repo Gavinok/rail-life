@@ -6,22 +6,22 @@ import (
 	"net/http"
 
 	"context"
-	"time"
 
-	// "github.com/go-redis/cache/v8"
 	"github.com/go-redis/redis/v8"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// const dbHOST = "10.9.0.3"
-// const mqHOST = "10.9.0.10"
-// const redisHOST = "10.9.0.9"
-
 const (
-	dbHOST    = "localhost"
-	mqHOST    = "localhost"
-	redisHOST = "localhost"
+	dbHOST    = "10.9.0.3"
+	mqHOST    = "10.9.0.10"
+	redisHOST = "10.9.0.9"
 )
+
+// const (
+// 	dbHOST    = "localhost"
+// 	mqHOST    = "localhost"
+// 	redisHOST = "localhost"
+// )
 
 var (
 	db *dataStore
@@ -102,35 +102,17 @@ func main() {
 	// ------- Setup Cache ----
 	mycache, cacheCTX = setupCache()
 
-	// failOnError(err, "failed to read user")
 	// -------- Setup endpoints -----
-	u, _ := create_user("gavin", Username("gavinok"), "tmp", "", db)
-	time.Sleep(2 * time.Second)
-	err := Cache(u, mycache, cacheCTX)
-	if err != nil {
-		log.Println(err)
-	}
-
-	time.Sleep(2 * time.Second)
-	u2, err := CheckCache(u, mycache, cacheCTX)
-	if err != nil {
-		log.Println(err)
-	}
-	log.Println("we got ", *u2)
-	// TODO like a post
-	// TODO like comments
+	log.Println("Backend Is Now Running")
+	http.HandleFunc("/", Signup)
 	http.HandleFunc("/signup", Signup)
 	http.HandleFunc("/signin", SignIn)
 	http.HandleFunc("/delete", DeleteAccount)
 	http.HandleFunc("/post", NewPost)
 	http.HandleFunc("/newfriend", NewFriend)
 	http.HandleFunc("/stats", AccountStats)
-	// TODO incomplete since I don't have a way to look up posts
-	// with this now
-	// http.HandleFunc("/addFriend", AddFriend)
 	http.HandleFunc("/comment", NewComment)
 	http.HandleFunc("/notifications", ReadNotifications)
-	http.HandleFunc("/forceNotifications", SendNotifications)
 
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }

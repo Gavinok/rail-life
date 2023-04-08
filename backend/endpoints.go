@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"time"
 )
 
 func decodeBody[T any](w http.ResponseWriter, r *http.Request) T {
@@ -179,36 +178,6 @@ func ReadNotifications(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(notifiactions)
 }
 
-// Example of sending realtime notifications
-func SendNotifications(w http.ResponseWriter, r *http.Request) {
-	if (*r).Method == "OPTIONS" {
-		return
-	}
-	if mqconn == nil {
-		mqconn, _ = rabbitMQDial("amqp://guest:guest@" + mqHOST + ":5672/")
-	}
-	// TODO need a way to lookup a post to COMMENT on
-	// Parse and decode the request body into a new `Credentials` instance
-	creds := decodeBody[user_doc](w, r)
-	u, err := read_user(creds.Username, db)
-	if err != nil {
-		log.Println("Error failed to find user in DB")
-		w.WriteHeader(http.StatusBadRequest)
-	}
-	if u == nil {
-		log.Println("Error user is nil")
-		w.WriteHeader(http.StatusBadRequest)
-	}
-	ch := connectToQueue(mqconn)
-	log.Println("notification queue connected")
-	for i := 0; i < 11; i++ {
-		ch.postNotification(u, "hello")
-		time.Sleep(1 * time.Second)
-	}
-	log.Println("notifications sent")
-	w.WriteHeader(http.StatusOK)
-
-}
 func AccountStats(w http.ResponseWriter, r *http.Request) {
 	if (*r).Method == "OPTIONS" {
 		return
