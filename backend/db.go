@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"encoding/json"
-	// "errors"
 	"fmt"
 	"time"
 
@@ -15,17 +14,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func connectToDB() (*mongo.Client, context.Context) {
+func connectToDB() *dataStore {
 	clientOptions := options.Client()
 	clientOptions.ApplyURI("mongodb://admin:admin@" + dbHOST + ":27017")
-	ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx := context.Background()
 	client, err := mongo.Connect(ctx, clientOptions)
 
 	if err != nil {
 		fmt.Println("Error connecting to DB")
 		panic(err)
 	}
-	return client, ctx
+	return &dataStore{
+		client, ctx,
+	}
 }
 
 type Username string
@@ -35,6 +36,7 @@ type user_doc struct {
 	Email       string
 	DateOfBirth string
 	Friends     []Username
+	Password    string
 	// list of post titles
 	// Posts []string
 	// list of comment contents
@@ -100,13 +102,13 @@ func (i comment_doc) MarshalBinary() ([]byte, error) {
 // TODO track user activity
 
 // Different types of notifications
+type NotificationType int8
+
 const (
-	COMMENT_NOTIFICATION = iota
+	COMMENT_NOTIFICATION NotificationType = iota
 	LIKE_NOTIFICATION
 	POST_NOTIFICATION
 )
-
-type NotificationType int8
 
 type notification_doc struct {
 	Type    NotificationType
@@ -116,8 +118,12 @@ type notification_doc struct {
 
 const DATABASE = "social_media_app"
 
-func read_user(user Username, db *mongo.Client, ctx context.Context) (*user_doc, error) {
-	// Check the cache for efficinency reasons
+func read_user(user Username, db *dataStore) (*user_doc, error) {
+	if db == nil {
+		db = connectToDB()
+	}
+
+	// Check the cache for efficiency reasons
 	usr, err := CheckCache(user_doc{Username: user}, mycache, cacheCTX)
 	if err == nil {
 		log.Println("Cache hit")
@@ -127,8 +133,8 @@ func read_user(user Username, db *mongo.Client, ctx context.Context) (*user_doc,
 	}
 
 	var result user_doc
-	err = db.Database(DATABASE).Collection("users").FindOne(
-		ctx, bson.D{{"username", string(user)}},
+	err = db.db.Database(DATABASE).Collection("users").FindOne(
+		db.ctx, bson.D{{"username", string(user)}},
 	).Decode(&result)
 	if err != nil {
 		if err.Error() != "mongo: no documents in result" {
@@ -143,8 +149,7 @@ func read_user(user Username, db *mongo.Client, ctx context.Context) (*user_doc,
 	return &result, nil
 }
 
-func create_user(user string, username Username, email string, dateofbirth string, db *mongo.Client, ctx context.Context) (*user_doc, error) {
-
+func create_user(user string, username Username, email string, dateofbirth string, db *dataStore) (*user_doc, error) {
 	u := user_doc{
 		Name:        user,
 		Username:    username,
@@ -152,7 +157,11 @@ func create_user(user string, username Username, email string, dateofbirth strin
 		DateOfBirth: dateofbirth,
 		Friends:     make([]Username, 0),
 	}
-	_, err := db.Database(DATABASE).Collection("users").InsertOne(context.TODO(), u)
+	_, err := db.db.Database(DATABASE).Collection("users").InsertOne(context.TODO(), u)
+	if err != nil {
+		fmt.Println("Error adding user to db: ", err)
+		panic(err)
+	}
 
 	err = Cache(u, mycache, cacheCTX)
 	CheckCache(u, mycache, cacheCTX)
@@ -162,14 +171,46 @@ func create_user(user string, username Username, email string, dateofbirth strin
 	}
 
 	return &u, nil
+}
+
+func (u *user_doc) addFriend(friend Username, db *dataStore) (*user_doc, error) {
+	upsert := true
+	after := options.After
+	var user_friend user_doc
+	opt := options.FindOneAndUpdateOptions{
+		ReturnDocument: &after,
+		Upsert:         &upsert,
+	}
+	ret := db.db.Database(DATABASE).Collection("users").FindOneAndUpdate(context.TODO(),
+		bson.M{"username": string(u.Username)},
+		bson.M{
+			"$addToSet": bson.M{"friends": string(friend)},
+		},
+		&opt)
+	if ret.Err() != nil {
+		log.Println("error adding friend", ret.Err())
+		return nil, ret.Err()
+	}
+	ret.Decode(&user_friend)
+	return &user_friend, Cache(user_friend, mycache, cacheCTX)
 
 }
-func (u *user_doc) getPosts() (*[]post_doc, error) {
+
+type dataStore struct {
+	db  *mongo.Client
+	ctx context.Context
+}
+
+func (db *dataStore) Disconnect() {
+	db.db.Disconnect(db.ctx)
+}
+
+func (db *dataStore) lookupPostsByAuthor(u *user_doc) (*[]post_doc, error) {
 	var result []post_doc
-	cursor, err := db.Database(DATABASE).Collection("posts").Find(
-		ctx, bson.D{{"author", string(u.Username)}},
+	cursor, err := db.db.Database(DATABASE).Collection("posts").Find(
+		db.ctx, bson.D{{"author", string(u.Username)}},
 	)
-	err = cursor.All(ctx, &result)
+	err = cursor.All(db.ctx, &result)
 	if err != nil {
 		if err.Error() != "mongo: no documents in result" {
 			return nil, err
@@ -177,16 +218,14 @@ func (u *user_doc) getPosts() (*[]post_doc, error) {
 		return nil, errors.New("User does not yet exist")
 
 	}
-	return &result, nil
-
+	return &result, err
 }
-
 func getUserStat[T any](u *user_doc, collection string) (*[]T, error) {
 	var result []T
-	cursor, err := db.Database(DATABASE).Collection(collection).Find(
-		ctx, bson.D{{"author", string(u.Username)}},
+	cursor, err := db.db.Database(DATABASE).Collection(collection).Find(
+		db.ctx, bson.D{{"author", string(u.Username)}},
 	)
-	err = cursor.All(ctx, &result)
+	err = cursor.All(db.ctx, &result)
 	if err != nil {
 		if err.Error() != "mongo: no documents in result" {
 			return nil, err
@@ -197,45 +236,40 @@ func getUserStat[T any](u *user_doc, collection string) (*[]T, error) {
 	return &result, nil
 }
 
-func (u *user_doc) Delete(db *mongo.Client, ctx context.Context) error {
-	_, err := db.Database(DATABASE).Collection("users").DeleteOne(ctx, bson.D{{"username", string(u.Username)}})
+func (db *dataStore) deleteUser(u *user_doc) error {
+	_, err := db.db.Database(DATABASE).Collection("users").DeleteOne(db.ctx, bson.D{{"username", string(u.Username)}})
 	return err
 }
-func (u *user_doc) newPost(title string, content string, db *mongo.Client, ctx context.Context) (post_doc, error) {
-	collection := db.Database(DATABASE).Collection("posts")
-	p := post_doc{
-		Title:          title,
-		Content:        content,
-		Author:         u.Username,
-		DateOfCreation: time.Now(),
-		Likes:          make([]Username, 0),
-		Comments:       make([]comment_doc, 0),
-	}
+func (db *dataStore) storePost(p post_doc) error {
+	collection := db.db.Database(DATABASE).Collection("posts")
 	_, err := collection.InsertOne(context.TODO(), p)
-
-	return p, err
+	return err
+}
+func (db *dataStore) storeComment(post_title string, comment comment_doc) (*post_doc, error) {
+	var result post_doc
+	// 7) Create an instance of an options and set the desired options
+	upsert := true
+	after := options.After
+	opt := options.FindOneAndUpdateOptions{
+		ReturnDocument: &after,
+		Upsert:         &upsert,
+	}
+	ret := db.db.Database(DATABASE).Collection("posts").FindOneAndUpdate(context.TODO(),
+		bson.M{"title": post_title},
+		bson.M{
+			"$addToSet": bson.M{"comments": comment},
+		},
+		&opt)
+	if ret.Err() != nil {
+		log.Println("error for comment insertion ", ret.Err())
+		return nil, ret.Err()
+	}
+	ret.Decode(&result)
+	return &result, nil
 }
 
-func (u *user_doc) newComment(title string, content string, db *mongo.Client, ctx context.Context) (comment_doc, error) {
-	collection := db.Database(DATABASE).Collection("comments")
-	c := comment_doc{
-		Content:        content,
-		Author:         u.Username,
-		DateOfCreation: time.Now(),
-		Likes:          make([]Username, 0),
-	}
-	_, err := collection.InsertOne(context.TODO(), c)
-	return c, err
-}
-
-func (u *user_doc) newNotification(nt NotificationType, content string, db *mongo.Client, ctx context.Context) (notification_doc, error) {
-	collection := db.Database(DATABASE).Collection("notifications")
-
-	n := notification_doc{
-		Type:    nt,
-		Content: content,
-		Author:  u.Username,
-	}
+func (db *dataStore) storeNotification(u *user_doc, n notification_doc) (notification_doc, error) {
+	collection := db.db.Database(DATABASE).Collection("notifications")
 	_, err := collection.InsertOne(context.TODO(), n)
 
 	return n, err

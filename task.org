@@ -15,8 +15,8 @@ this platform.
 * Requirements
 
 Your solution should include the following components:
-- A MongoDB database to store information about the system.
-- A Redis cache to store frequently accessed data and improve performance.
+- [X] A MongoDB database to store information about the system.
+- [ ] A Redis cache to store frequently accessed data and improve performance.
 - An Nginx Load Balancer to distribute incoming requests to multiple
   servers and improve availability.
 - A messaging system using Kafka or RabbitMQ to handle real-time
@@ -29,6 +29,17 @@ Your solution should include the following components:
   - A thread will be used for checking notifications
 - Use Redis for caching
 
+- Push notifications
+  - create a client script.
+  - Each time this script is run
+  - It will simulate a user being connected to the server.
+  - To implement this functionality, consider defining different types
+    of notifications (e.g., friend requests, new posts on the feed),
+    and allowing users to select which types of notifications they
+    wish to receive.
+  - Each notification type can have a corresponding queue, and
+    subscribers to that queue will receive notifications of that type.
+    
 # Your document-based database should include the following components:
 
 # - Ability to store information about users, including their name,
@@ -44,30 +55,30 @@ Your solution should include the following components:
 
   
 # Ability to store information about users
-name,
-username,
-email,
-password,
-date of birth,
-list of friends.
+- [X] name,
+- [X] username,
+- [X] email,
+- [ ] password,
+- [X] date of birth,
+- [X] list of friends.
 
 # Ability to store information about posts including their
-title,
-content,
-author,
-date of creation,
-and number of likes and comments.
+- [X] title,
+- [X] content,
+- [X] author,
+- [X] date of creation,
+- [X] and number of likes and comments.
 
 # Ability to store information about comments, including their
-content,
-author,
-date of creation,
-and number of likes.
+- [X] content,
+- [X] author,
+- [X] date of creation,
+- [X] and number of likes.
 
 # Ability to track notifications for users, including
-notifications for new posts,
-comments,
-and likes.
+- [X] notifications for new posts,
+- [X] comments,
+- [ ] and likes.
 
 ** TODO Scripts to populate the database with sample data for testing and generate sample reports on user activity. (5 points)(O2)
 # Ability to generate reports on user activity, including

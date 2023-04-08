@@ -2,13 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	amqp "github.com/rabbitmq/amqp091-go"
+	"log"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func rabbitMQDial(url string) (*amqp.Connection, error) {
 	for {
-		conn, err := amqp.Dial("amqp://guest:guest@10.9.0.10:5672/")
+		conn, err := amqp.Dial(url)
 		if err == nil {
 			return conn, err
 		}
@@ -16,7 +18,12 @@ func rabbitMQDial(url string) (*amqp.Connection, error) {
 	}
 
 }
-func connectToQueue(conn *amqp.Connection) (amqp.Queue, *amqp.Channel) {
+
+func connectToQueue(conn *amqp.Connection) NotificationSource {
+	if conn == nil {
+		mqconn, _ = rabbitMQDial("amqp://guest:guest@" + mqHOST + ":5672/")
+		log.Println("Failed to connect to queue")
+	}
 	// Create a channel
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
@@ -31,12 +38,51 @@ func connectToQueue(conn *amqp.Connection) (amqp.Queue, *amqp.Channel) {
 		nil,             // Arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-	return q, ch
+
+	return NotificationSource{q: q, conn: conn, ch: ch}
 }
 
-func postNotification[D Doc](d D, notification string, q *amqp.Channel) error {
+type NotificationSource struct {
+	q    amqp.Queue
+	conn *amqp.Connection
+	ch   *amqp.Channel
+}
+
+type NotificationSender struct {
+	src <-chan amqp.Delivery
+}
+
+func (source NotificationSender) Get() string {
+	var e string
+	json.Unmarshal((<-source.src).Body, &e)
+	return e
+}
+func (source *NotificationSource) SendUserNotification(toUser Username, notification string) error {
 	s, _ := json.Marshal(notification)
-	return q.Publish(
+	ch, err := source.conn.Channel()
+	if err != nil {
+		return err
+	}
+	return ch.Publish(
+		"",                         // Exchange name
+		"users"+"#"+string(toUser), // Queue name
+		false,                      // Mandatory
+		false,                      // Immediate
+		amqp.Publishing{
+			ContentType: "text/json",
+			Body:        []byte(s),
+		},
+	)
+
+}
+
+func (source *NotificationSource) postNotification(d Doc, notification string) error {
+	s, _ := json.Marshal(notification)
+	ch, err := source.conn.Channel()
+	if err != nil {
+		return err
+	}
+	return ch.Publish(
 		"",                            // Exchange name
 		d.CollectionName()+"#"+d.Id(), // Queue name
 		false,                         // Mandatory
@@ -49,11 +95,16 @@ func postNotification[D Doc](d D, notification string, q *amqp.Channel) error {
 
 }
 
-func trackNotifications[D Doc](d D, c *amqp.Connection) <-chan amqp.Delivery {
+func trackNotifications(d Doc, c *amqp.Connection) NotificationSender {
+	connectToQueue(mqconn)
+	if c == nil {
+		log.Println(c, "connection was nil")
+	}
 	ch, err := c.Channel()
-
+	if err != nil {
+		log.Println("failed to create the channel")
+	}
 	// Just in case no notifications are sent yet
-
 	_, err = ch.QueueDeclare(
 		d.CollectionName()+"#"+d.Id(), // Queue name
 		false,                         // Durable
@@ -66,5 +117,5 @@ func trackNotifications[D Doc](d D, c *amqp.Connection) <-chan amqp.Delivery {
 	failOnError(err, "Failed to open a channel")
 	source, err := ch.Consume(d.CollectionName()+"#"+d.Id(), "", false, false, false, false, nil)
 	failOnError(err, "Failed to open a channel")
-	return source
+	return NotificationSender{src: source}
 }

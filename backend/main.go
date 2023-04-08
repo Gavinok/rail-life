@@ -10,20 +10,27 @@ import (
 
 	// "github.com/go-redis/cache/v8"
 	"github.com/go-redis/redis/v8"
-	"go.mongodb.org/mongo-driver/mongo"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // const dbHOST = "10.9.0.3"
 // const mqHOST = "10.9.0.10"
-const dbHOST = "localhost"
-const mqHOST = "localhost"
-const redisHOST = "localhost"
+// const redisHOST = "10.9.0.9"
 
-var db *mongo.Client
-var ctx context.Context
+const (
+	dbHOST    = "localhost"
+	mqHOST    = "localhost"
+	redisHOST = "localhost"
+)
 
-var mycache *redis.Client
-var cacheCTX context.Context
+var (
+	db *dataStore
+	// db       *mongo.Client
+	// ctx      context.Context
+	mycache  *redis.Client
+	cacheCTX context.Context
+	mqconn   *amqp.Connection
+)
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -43,12 +50,16 @@ func setupCache() (*redis.Client, context.Context) {
 }
 
 type Doc interface {
+	MarshalBinary() ([]byte, error)
 	isDoc() bool
 	CollectionName() string
 	Id() string
 }
 
 func Cache[D Doc](doc D, mycache *redis.Client, ctx context.Context) error {
+	if mycache == nil {
+		mycache, ctx = setupCache()
+	}
 	log.Println("cacheing value ", doc)
 	if err := mycache.Set(cacheCTX, doc.CollectionName()+"#"+doc.Id(), doc, 0).Err(); err != nil {
 		return err
@@ -57,10 +68,17 @@ func Cache[D Doc](doc D, mycache *redis.Client, ctx context.Context) error {
 
 }
 func CheckCache[D Doc](d D, mycache *redis.Client, ctx context.Context) (D, error) {
+	if mycache == nil {
+		mycache, ctx = setupCache()
+	}
+
 	var wanted D
 	got, err := mycache.Get(ctx, d.CollectionName()+"#"+d.Id()).Bytes()
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		log.Println(err)
+		return wanted, err
+	} else if err == redis.Nil {
+		log.Println("cache hit for", d)
 	}
 	log.Printf("we also got %s\n", string(got))
 	err = json.Unmarshal(got, &wanted)
@@ -72,23 +90,23 @@ func CheckCache[D Doc](d D, mycache *redis.Client, ctx context.Context) (D, erro
 
 func main() {
 	// ------- Connect to RabbitMQ server -------
-	conn, err := rabbitMQDial("amqp://guest:guest@" + mqHOST + ":5672/")
-	defer conn.Close()
-	_, ch := connectToQueue(conn)
-	defer ch.Close()
+	mqconn, _ = rabbitMQDial("amqp://guest:guest@" + mqHOST + ":5672/")
+	if mqconn == nil {
+		log.Println("mq connection failed")
+	}
 
 	// ------- Setup Database --------
-	db, ctx = connectToDB()
-	defer db.Disconnect(ctx)
+	db = connectToDB()
+	defer db.Disconnect()
 
 	// ------- Setup Cache ----
 	mycache, cacheCTX = setupCache()
 
-	failOnError(err, "failed to read user")
+	// failOnError(err, "failed to read user")
 	// -------- Setup endpoints -----
-	u, _ := create_user("gavin", Username("gavinok"), "tmp", "", db, ctx)
+	u, _ := create_user("gavin", Username("gavinok"), "tmp", "", db)
 	time.Sleep(2 * time.Second)
-	err = Cache(u, mycache, cacheCTX)
+	err := Cache(u, mycache, cacheCTX)
 	if err != nil {
 		log.Println(err)
 	}
@@ -105,24 +123,14 @@ func main() {
 	http.HandleFunc("/signin", SignIn)
 	http.HandleFunc("/delete", DeleteAccount)
 	http.HandleFunc("/post", NewPost)
+	http.HandleFunc("/newfriend", NewFriend)
 	http.HandleFunc("/stats", AccountStats)
 	// TODO incomplete since I don't have a way to look up posts
 	// with this now
+	// http.HandleFunc("/addFriend", AddFriend)
 	http.HandleFunc("/comment", NewComment)
+	http.HandleFunc("/notifications", ReadNotifications)
+	http.HandleFunc("/forceNotifications", SendNotifications)
+
 	log.Fatal(http.ListenAndServe(":8000", nil))
-
-	// newNotChan, _ := conn.Channel()
-	// Consume messages from the queue
-	// for {
-	// 	e := postNotification(u2.Username, "hello", newNotChan)
-	// 	if e != nil {
-	// 		print(e)
-	// 	}
-	// 	time.Sleep(10 * time.Millisecond)
-	// 	m := <-msgs
-	// 	var s string
-	// 	json.Unmarshal(m.Body, &s)
-	// 	print(s)
-
-	// }
 }
