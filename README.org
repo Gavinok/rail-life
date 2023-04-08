@@ -1,0 +1,310 @@
+* Overview
+This project was configured using 
+- docker-compose
+
+* Starting project
+#+begin_src sh
+ docker-compose up build  
+#+end_src
+
+* Files in this project
+- ~exampleUsers.sh~
+  - script used for testing this project
+- ~create_ten.sh~
+  - used for creating ten notifications to demo the notification support
+- ~nginx.conf~
+  - Nginx configuration
+
+* Endpoints are exposed
+** Ports
+- Backend instance 1
+  - "8000:8000"
+-  Backend instance 2
+  - "9000:8000"
+- Nginx
+  - "80:80"
+- Redis
+  - "6379:6379"
+- MongoDB
+  - "27017:27017"
+- RabbitMQ
+  - "5672:5672"
+  - "15672:15672"
+
+** Usage
+All endpoints can be accessed using the curl command
+
+To keep things simple each action has its own endpoint and they all
+use POST HTTP methods
+
+Here is an example of signing up a user:
+
+#+begin_src sh
+curl -X POST -d '{ "Name": "gavin", "Username": "gavman", "Email" : "gavinfreeborn@gmail.com",  "DateOfBirth": "1997ff", "Password": "hello" }' "http://localhost:80/signup"
+#+end_src
+
+The following operations are exposed:
+- ~signup~
+- ~signin~
+- ~delete~
+- ~post~
+- ~newfriend~
+- ~stats~
+- ~comment~
+- ~notifications~
+
+All of which can be accessed via localhost on port 80
+
+These fulfill all the specified operations
+
+all endpoints excluding post, ~newFriend~, and comment accept the following JSON input format
+
+#+begin_src js
+  {
+  "Name": "gavin",
+  "Username": "gavman",
+  "Email": "gavinfreeborn@gmail.com",
+  "DateOfBirth": "1997ff",
+  "Password": "hello"
+}
+#+end_src
+
+As a shorthand, I used the letter ~u~ as the key for a user description to go.
+
+The only mandatory part of the user description is the ~"Username"~ field
+
+post accepts
+#+begin_src js
+  {
+  "u": {
+    "Name": "gavin",
+    "Username": "gavman",
+    "Email": "gavinfreeborn@gmail.com",
+    "DateOfBirth": "1997ff"
+  },
+  "title": "hello world",
+  "content": "what is up people"
+}
+#+end_src
+
+Post accepts
+#+begin_src json
+{
+  "u": {
+    "Name": "chad",
+    "Username": "chadman"
+  },
+  "title": "I am chad",
+  "content": "yo it is chad"
+}  
+#+end_src
+The ~title~ being the title of the post and ~content~ is the content of that post
+
+comment accepts
+#+begin_src js
+  {
+  "u": {
+    "Username": "gavman"
+  },
+  "article_title": "I am chad",
+  "content": "sup chad"
+}
+#+end_src
+
+Finally, ~newFriend~ accepts
+#+begin_src json
+  {
+  "u": {
+    "Username": "gavman"
+  },
+  "friend_name": "chadman"
+}
+#+end_src
+Where ~friend_name~ is the username of the user you would like to add as a friend
+
+Notifications can be accessed via the notifications endpoint. When
+accessed it will return 10 the pending notifications for that user.
+
+NOTE: That there must be at least ten other wise it will long poll until that happens
+
+For this reason I have included a script which will create 10 posts
+from a user which will create 10 notifications for their friend.
+
+Simply open 2 terminal and run the following
+#+begin_src sh
+  bash ./exampleUsers.sh
+#+end_src
+
+Then when that locks up and is waiting for 10 notifications run
+
+#+begin_src sh
+  bash ./create_ten.sh
+#+end_src
+
+You will then see the first terminal printing the 10 new notifications.
+
+For more examples please see the ~exampleUsers.sh~ script which demos
+all supported operations.
+
+~exampleUsers.sh~ fulfills the following requirements:
+- Scripts to populate the database with sample data for testing and generate sample reports on user activity.
+- Scripts to perform basic CRUD operations on the database, including creating, reading, updating, and deleting records.
+
+I did miss the clarification to have a end point for each kind of
+notification so as of now all notifications for comments and posts are
+sent to the same notification end point. This still fulfills the
+requirement to have realtime notifications for these but unfortunately
+does not differentiate with the end point it's self.
+
+* Answers To Questions
+** 1.
+*** What are the trade-offs between using a normalized schema versus a denormalized schema in MongoDB?
+Since normalized schemas are used to keep all data in one place and
+point to it from other parts of the database using references there
+are multiple benefits.
+- Benefit consistency of data since the data only needs to be updated
+  at the reference, there is less chance of an inconsistent state
+  between 2 parts of the database
+- Faster updates since they do not need to be replicated
+- Smaller size meaning that as you begin to store more information
+  less space is needed to store it all since there are little to no duplications
+
+The biggest cost of normalized schemas that are not experienced with
+denormalized schemas speed of queries since there is no need to keep
+tracing references back to the source. Additionally caching can in
+some cases be more effective this way since all you need to store is a
+single query result rather than storing references. Though this can
+also have the benefit of a lower risk in an inconsistent cache.
+
+*** Which approach would you recommend for the social media platform database and why? (5 points)(O4)
+Since a social media app would be heavily reliant on reading we want
+the best option when it comes to query performance. In this case that
+would be a denormalized schema.
+** 2.
+*** How would you design an index in MongoDB to support a query that searches for all posts with a particular tag?
+#+begin_src 
+db.getCollection("posts").createIndex({ "hashtag": 1 })  
+#+end_src
+
+
+This will create an index in our ~posts~ collection. We used 1 here to
+specify an ascending index.
+
+*** How would this index be impacted if the number of posts in the database grows significantly? (5 points)(O4)
+As the number of posts increases the size of the index will also need
+to grow. This means that the space needed to store the index will
+increase. In addition, the index can become fragmented. This can slow
+down the performance of the query itself. This last issue can be
+resolved by simply creating a new index to remove the progressive
+fragmentation that has happened
+** 3.
+*** Suppose you need to add a new field to the posts collection to track the location where the post was created. How would you modify the existing documents in the collection to include this new field?
+
+A simple way to do this would be using the ~updateMany~ method. Simply
+select all posts by giving it an empty filter and then determine the
+default value you would like to use. The default value will be added
+to all existing posts so that future posts can add a location later.
+
+#+begin_src 
+db.getCollection("posts").updateMany({}, { $set: { "location": "" } })  
+#+end_src
+
+
+*** What are some potential issues that could arise from this modification? (5points)(O6)
+Potential issues that may come up from this modification are backwards
+compatibility. Since anything that still creates posts without the
+location, the field will begin to continue to create data conflicts
+within the system. Indexes will likely need to be recreated. 
+** 4.
+***  How would you use Redis as a cache for frequently accessed data in the social media platform?
+I would use Redis as an aside cache since this is a very read-heavy workload's the best fit for this use case.
+
+In other words, the server would check if the needed data ( in this
+case a post ) is in the cache.
+
+If the post is in the cache then we can read that otherwise we get a cache miss and look it up in the DB. After that post is revived we will have that added to the cache for next time.
+
+In addition, we for writing we can add a write-through approach to avoid cache misses even more often
+***  What are the benefits and drawbacks of this approach?
+
+The benefit of this approach is we get significantly fewer cache
+misses meaning significantly faster reads for the user. In addition,
+this also means that we are resilient to a chance miss since the
+values are still being stored in the database so if the cache goes
+down we still have the data stored.
+
+The biggest drawback to this approach is frequent writes can become
+overwhelming to be caching and storing them in the database. However,
+since writing is significantly less common than reading in a social
+media app this is not enough of a cost not to be worth implementing.
+
+
+*** How would you handle cache invalidation and cache expiration? (5 points)(O6)
+
+For this use case, I would have the database act as an aside cache
+since. One method for invalidation is to invalidate the cache every
+time the post has been updated. The expiration time can be handled
+using a sliding expiration time. This way each access of a non invalidated cache entry will keep it in the cache to avoid a miss a
+little longer.
+** 5. 
+*** How would you use Kafka or RabbitMQ to handle real-time notifications and messaging between users on the social media platform?
+
+   When a user logs in the backend will create a queue in rabbitmq for
+   that user's notifications and listen to them. The front end can
+   either use a long polling approach or WebSockets depending on the
+   performance deemed necessary. In this case, we will say we can use
+   a WebSocket. When the backend receives a new notification on the
+   user's queue then it is passed as a notification on that WebSocket.
+
+   An additional, service can be used as a middleman storing all
+   notifications passed on these queues in the database in case the
+   user is not online. Alternatively, this can be done manually by the
+   backend service itself or using RabbitMQ's persistent storage support.
+
+   The backend can simply handle requests for new posts, comments, or
+   messages to publish to the associated user's queue.
+   
+   When a new notification should be sent the backend sends that
+   queue. This way if the user is online or logs in relatively soon
+   after the notification is published they will receive it in real time.
+***  What are the benefits and drawbacks of each messaging system?
+A pro of Kafka is its horizontal scalability. It was built from the
+ground up to be split across multiple system. It allows a single
+topic to be split across multiple partitions, and also the use of a
+pull-based model means that Kafka does not need to track the state of
+consumers. Finally, Kafka can scale much farther than possible with
+RabbitMQ up to millions of messages per second.
+
+One of the biggest benefits of RabbitMQ is its simplicity of it. There
+is no zookeeper like in Kafka. RabbitMQ supports one-to-one consumers
+while Kafka is only one-to-many. Another benefit of RabbitMQ is the
+protocol support Kafka is primarily intended for its proprietary
+protocol but RabbitMQ supports multiple messaging protocols.
+
+*** How would you ensure message persistence and replication? (5 points)(O6)
+Since you did not specify for which message broker I will assume this
+is just for the one I used in the previous part. To ensure persistence
+you would need to use the durability support in RabbitMQ to ensure
+that the queue will survive crashes.
+
+For per message persistence, we could use a ~deliveryMode~ of 2. This
+ensures all messages are stored on disk. However, we can also simply
+back up notifications as mentioned before to avoid this issue.
+
+Finally, for replication, we can use a mirrored queue in RabbitMQ.
+** 6.
+*** In a multi-user environment, how would you handle concurrency control and data consistency between MongoDB and Redis in the social media platform?
+Using transactions with MongoDB allows us to ensure a sequence of
+transactions was executed successfully before they are
+committed. These can be used to ensure control of concurrent DB access is
+not an issue. Redis also supports transactions in a similar
+way. Alternatively, there are also multiple atomic operations that
+Redis supports. If concurrent access becomes a bottleneck the next
+best thing to do is use your cache and execute a compare and swap
+operation in MongoDB to avoid blocking higher priority operations.
+
+*** What are the benefits and drawbacks of this approach? (5 points)(O4)
+While transactions and atomic operations prevent the issue of
+concurrent database access of a specific entry they do halt all
+operations that need to be performed. Until the transaction has
+completed
